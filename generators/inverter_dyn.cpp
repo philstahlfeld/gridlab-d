@@ -261,11 +261,14 @@ int inverter_dyn::create(void)
 	Tq = 0.01; // s
 	Tv = 0.01; // s
 	Vset = -99.0;	//Flag value
+
+	// Parameters for QV droop block
 	kpv = 0;
 	kiv = 5.86;
 	mq = 0.05;
 	E_max = 2;
 	E_min = 0;
+
 	mp = 3.77;
 	P_f_droop = -100;
 	kppmax = 3;
@@ -1690,6 +1693,8 @@ SIMULATIONMODE inverter_dyn::inter_deltaupdate(unsigned int64 delta_time, unsign
 
 	SIMULATIONMODE simmode_return_value = SM_EVENT;
 
+	double E_mag_QV,x_QV;
+
 	//If we have a meter, reset the accumulators
 	if (parent_is_a_meter == true)
 	{
@@ -1939,6 +1944,10 @@ SIMULATIONMODE inverter_dyn::inter_deltaupdate(unsigned int64 delta_time, unsign
 					{
 						E_mag = E_min;
 					}
+
+					E_mag_QV = QV_pi.getoutput(V_ref-pred_state.v_measure,deltat,PREDICTOR);
+					x_QV = QV_pi.getstate(PREDICTOR);
+					printf("Predictor: delta_time = %d E_mag = %lf,E_mag_QV = %lf,x = %lf, x_QV = %lf,diff = %lf\n",delta_time,E_mag,E_mag_QV,pred_state.V_ini,x_QV,E_mag-E_mag_QV);
 
 					// V_ref is the voltage reference obtained from Q-V droop
 					// Vset is the voltage set point, usually 1 pu
@@ -2223,6 +2232,10 @@ SIMULATIONMODE inverter_dyn::inter_deltaupdate(unsigned int64 delta_time, unsign
 					{
 						E_mag = E_min;
 					}
+
+					E_mag_QV = QV_pi.getoutput(V_ref-next_state.v_measure,deltat,CORRECTOR);
+					x_QV = QV_pi.getstate(CORRECTOR);
+					printf("Corrector: delta_time = %d E_mag = %lf,E_mag_QV = %lf,x = %lf, x_QV = %lf,diff = %lf\n",delta_time,E_mag,E_mag_QV,next_state.V_ini,x_QV,E_mag-E_mag_QV);
 
 					//E_mag = E_mag * (V_DC/Vdc_base);
 
@@ -3578,8 +3591,17 @@ STATUS inverter_dyn::init_dynamics(INV_DYN_STATE *curr_time)
 				curr_time->Angle[i] = (e_source[i]).Arg(); // Obtain the inverter internal voltage phasor angle
 			}
 
-			// Initializa the internal voltage magnitudes
-			curr_time->V_ini = (e_source[0].Mag() + e_source[1].Mag() + e_source[2].Mag()) / 3 / V_base;
+			// Initialize the internal voltage magnitudes
+			// curr_time->V_ini = (e_source[0].Mag() + e_source[1].Mag() + e_source[2].Mag()) / 3 / V_base;
+			// QV control block initialization
+			// Add parameters to QV control block
+			// We add the parameters here instead of the create
+			// function because the parameters can be set through
+			// the glm file as well.
+			QV_pi.setconstants(kpv,kiv,E_min,E_max,E_min,E_max);
+
+			curr_time->V_ini = QV_pi.init(0,(e_source[0].Mag() + e_source[1].Mag() + e_source[2].Mag()) / 3 / V_base);
+			
 
 			//See if it is the first deltamode entry - theory is all future changes will trigger deltamode, so these should be set
 			if (first_deltamode_init == true)
