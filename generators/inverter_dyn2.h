@@ -1,34 +1,56 @@
-#ifndef GLD_GENERATORS_INVERTER_DYN_H_
-#define GLD_GENERATORS_INVERTER_DYN_H_
+// This is the old implementation of the inverter_dyn model (without cblocks)
+#ifndef GLD_GENERATORS_INVERTER_DYN2_H_
+#define GLD_GENERATORS_INVERTER_DYN2_H_
 
 #include <vector>
 
-#include "cblock.h"
-
 #include "generators.h"
 
-EXPORT int isa_inverter_dyn(OBJECT *obj, char *classname);
-EXPORT STATUS preupdate_inverter_dyn(OBJECT *obj, TIMESTAMP t0, unsigned int64 delta_time);
-EXPORT SIMULATIONMODE interupdate_inverter_dyn(OBJECT *obj, unsigned int64 delta_time, unsigned long dt, unsigned int iteration_count_val);
-EXPORT STATUS postupdate_inverter_dyn(OBJECT *obj, complex *useful_value, unsigned int mode_pass);
-EXPORT STATUS inverter_dyn_NR_current_injection_update(OBJECT *obj, int64 iteration_count);
-EXPORT STATUS inverter_dyn_DC_object_register(OBJECT *this_obj, OBJECT *DC_obj);
+EXPORT int isa_inverter_dyn2(OBJECT *obj, char *classname);
+EXPORT STATUS preupdate_inverter_dyn2(OBJECT *obj, TIMESTAMP t0, unsigned int64 delta_time);
+EXPORT SIMULATIONMODE interupdate_inverter_dyn2(OBJECT *obj, unsigned int64 delta_time, unsigned long dt, unsigned int iteration_count_val);
+EXPORT STATUS postupdate_inverter_dyn2(OBJECT *obj, complex *useful_value, unsigned int mode_pass);
+EXPORT STATUS inverter_dyn2_NR_current_injection_update(OBJECT *obj, int64 iteration_count);
+EXPORT STATUS inverter_dyn2_DC_object_register(OBJECT *this_obj, OBJECT *DC_obj);
 
 // State variables of grid-forming & grid-following controller
 typedef struct
 {
 
 	///////Grid-Forming
+	// state variables in the P measurements
+	double p_measure;
+	double dp_measure;
+
+	// state variables in the Q measurements
+	double q_measure;
+	double dq_measure;
+
+	// state variables in the V measurements
+	double v_measure;
+	double dv_measure;
+
+	// state variables in the voltage control loop
+	double V_ini;
+	double dV_ini;
 
 	// state variables of the dc bus voltage when using grid-forming PV
 	double dVdc_pu;
 	double Vdc_pu;
 
+	// state variables of droop control, Pmax and Pmin control
+	double ddelta_w_Pmax_ini;
+	double delta_w_Pmax_ini;
+	double ddelta_w_Pmin_ini;
+	double delta_w_Pmin_ini;
+
 	// state variables of Vdc_min controller when using PV grid-forming control
 	double ddelta_w_Vdc_min_ini;
 	double delta_w_Vdc_min_ini;
 
-        double delta_w; // used only during switching to qsts convergence check
+	// state variables of frequency and phase angle of the internal voltage
+	double delta_w;
+	double Angle[3];
 
 	////////Grid-Following
 	// state variables in PLL
@@ -61,16 +83,16 @@ typedef struct
 	double dQref_droop_pu_filter; //
 	double Qref_droop_pu_filter;  //
 
-} INV_DYN_STATE;
+} INV_DYN_STATE2;
 
 typedef struct
 {
 	FUNCTIONADDR fxn_address;
 	OBJECT *dc_object;
-} DC_OBJ_FXNS;
+} DC_OBJ_FXNS2;
 
-//inverter_dyn class
-class inverter_dyn : public gld_object
+//inverter_dyn2 class
+class inverter_dyn2 : public gld_object
 {
 private:
 	bool deltamode_inclusive; //Boolean for deltamode calls - pulled from object flags
@@ -80,8 +102,8 @@ private:
 	double prev_timestamp_dbl;
 	double last_QSTS_GF_Update;
 
-	INV_DYN_STATE pred_state; ///< The predictor state of the inverter in delamode
-	INV_DYN_STATE next_state; ///< The next state of the inverter in delamode
+	INV_DYN_STATE2 pred_state; ///< The predictor state of the inverter in delamode
+	INV_DYN_STATE2 next_state; ///< The next state of the inverter in delamode
 
 	gld_property *pIGenerated[3];		//Link to direct current injections to powerflow at bus-level
 	complex generator_admittance[3][3]; //Generator admittance matrix converted from sequence values
@@ -115,7 +137,7 @@ private:
 	SIMULATIONMODE desired_simulation_mode; //deltamode desired simulation mode after corrector pass - prevents starting iterations again
 
 	//Vector for DC object "update" functions
-	std::vector<DC_OBJ_FXNS> dc_interface_objects;
+	std::vector<DC_OBJ_FXNS2> dc_interface_objects;
 	double P_DC;
 	double V_DC;
 	double I_DC;
@@ -180,7 +202,7 @@ public:
 	double GridForming_freq_convergence_criterion;
 	double GridForming_volt_convergence_criterion;
 
-	INV_DYN_STATE curr_state; ///< The current state of the inverter in deltamode
+	INV_DYN_STATE2 curr_state; ///< The current state of the inverter in deltamode
 
 	complex phaseA_I_Out; // current
 	complex phaseB_I_Out;
@@ -240,28 +262,16 @@ public:
 
 	double kpv;			  // proportional gain and integral gain of voltage loop
 	double kiv;			  //
-
 	double mq;			  // mq is the Q-V droop gain, usually 0.05 pu
 	double E_max;		  // E_max and E_min are the maximum and minimum of the output of voltage controller
 	double E_min;		  //
-
-	// Grid forming control blocks
-
-	PIControl  QV_blk; // QV PI control block
-	Filter     Qmeas_blk; // Q-measurement filter block
-	Filter     Vmeas_blk; // V-measurement filter block
-	Filter     Pmeas_blk; // P-measurement filter block
-	PIControl  Pminfreq_blk; // Frequency controller for Pmin (replaces delta_w_Pmin_ini)
-	PIControl  Pmaxfreq_blk; // Frequency controller for Pmax (replaces delta_w_Pmax_ini)
-	Integrator Angle_blk[3]; // Integrator block for internal source angle for the three phases
-
 	double delta_w_droop; // delta mega from P-f droop
 	double delta_w_Pmax;  //
 	double delta_w_Pmin;  //
 	double Pset;		  // power set point in P-f droop
 	double mp;			  // P-f droop gain, usually 3.77 rad/s/pu
 	double P_f_droop;     // p-f droop gain, per unit, usually 0.01
-	double kppmax;		  // proportional and integral gains for Pmin and Pmax controller
+	double kppmax;		  // proportional and integral gains for Pmax controller
 	double kipmax;
 	double w_lim; // w_lim is the saturation limit
 	double Pmax;  // Pmax and Pmin are the maximum limit and minimum limit of Pmax controller and Pmin controller
@@ -323,7 +333,7 @@ public:
 	double delta_w_Vdc_min; //variable in the Vdc_min controller
 
 	/* required implementations */
-	inverter_dyn(MODULE *module);
+	inverter_dyn2(MODULE *module);
 	int isa(char *classname);
 
 	int create(void);
@@ -335,13 +345,13 @@ public:
 	SIMULATIONMODE inter_deltaupdate(unsigned int64 delta_time, unsigned long dt, unsigned int iteration_count_val);
 	STATUS post_deltaupdate(complex *useful_value, unsigned int mode_pass);
 	STATUS updateCurrInjection(int64 iteration_count);
-	STATUS init_dynamics(INV_DYN_STATE *curr_time);
+	STATUS init_dynamics(INV_DYN_STATE2 *curr_time);
 	STATUS DC_object_register(OBJECT *DC_object);
 
 public:
 	static CLASS *oclass;
-	static inverter_dyn *defaults;
+	static inverter_dyn2 *defaults;
 	static CLASS *plcass;
 };
 
-#endif // GLD_GENERATORS_INVERTER_DYN_H_
+#endif // GLD_GENERATORS_INVERTER_DYN2_H_

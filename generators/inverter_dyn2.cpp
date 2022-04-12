@@ -1,18 +1,19 @@
-#include "inverter_dyn.h"
+// This is the old implementation of the inverter_dyn model (without cblocks)
+#include "inverter_dyn2.h"
 
-CLASS *inverter_dyn::oclass = NULL;
-inverter_dyn *inverter_dyn::defaults = NULL;
+CLASS *inverter_dyn2::oclass = NULL;
+inverter_dyn2 *inverter_dyn2::defaults = NULL;
 
 static PASSCONFIG clockpass = PC_BOTTOMUP;
 
 /* Class registration is only called once to register the class with the core */
-inverter_dyn::inverter_dyn(MODULE *module)
+inverter_dyn2::inverter_dyn2(MODULE *module)
 {
 	if (oclass == NULL)
 	{
-		oclass = gl_register_class(module, "inverter_dyn", sizeof(inverter_dyn), PC_PRETOPDOWN | PC_BOTTOMUP | PC_POSTTOPDOWN | PC_AUTOLOCK);
+		oclass = gl_register_class(module, "inverter_dyn2", sizeof(inverter_dyn2), PC_PRETOPDOWN | PC_BOTTOMUP | PC_POSTTOPDOWN | PC_AUTOLOCK);
 		if (oclass == NULL)
-			throw "unable to register class inverter_dyn";
+			throw "unable to register class inverter_dyn2";
 		else
 			oclass->trl = TRL_PROOF;
 
@@ -46,9 +47,9 @@ inverter_dyn::inverter_dyn(MODULE *module)
 			PT_complex, "e_source_A", PADDR(e_source[0]), PT_ACCESS, PA_HIDDEN, PT_DESCRIPTION, "DELTAMODE: Internal voltage of grid-forming source, phase A",
 			PT_complex, "e_source_B", PADDR(e_source[1]), PT_ACCESS, PA_HIDDEN, PT_DESCRIPTION, "DELTAMODE: Internal voltage of grid-forming source, phase B",
 			PT_complex, "e_source_C", PADDR(e_source[2]), PT_ACCESS, PA_HIDDEN, PT_DESCRIPTION, "DELTAMODE: Internal voltage of grid-forming source, phase C",
-			PT_double, "V_angle_A", PADDR(Angle_blk[0].x[0]), PT_ACCESS, PA_HIDDEN, PT_DESCRIPTION, "DELTAMODE: Internal angle of grid-forming source, phase A",
-			PT_double, "V_angle_B", PADDR(Angle_blk[1].x[0]), PT_ACCESS, PA_HIDDEN, PT_DESCRIPTION, "DELTAMODE: Internal angle of grid-forming source, phase B",
-			PT_double, "V_angle_C", PADDR(Angle_blk[2].x[0]), PT_ACCESS, PA_HIDDEN, PT_DESCRIPTION, "DELTAMODE: Internal angle of grid-forming source, phase C",
+			PT_double, "V_angle_A", PADDR(curr_state.Angle[0]), PT_ACCESS, PA_HIDDEN, PT_DESCRIPTION, "DELTAMODE: Internal angle of grid-forming source, phase A",
+			PT_double, "V_angle_B", PADDR(curr_state.Angle[1]), PT_ACCESS, PA_HIDDEN, PT_DESCRIPTION, "DELTAMODE: Internal angle of grid-forming source, phase B",
+			PT_double, "V_angle_C", PADDR(curr_state.Angle[2]), PT_ACCESS, PA_HIDDEN, PT_DESCRIPTION, "DELTAMODE: Internal angle of grid-forming source, phase C",
 
 			// 3 phase average value of terminal voltage
 			PT_double, "pCircuit_V_Avg_pu", PADDR(pCircuit_V_Avg_pu), PT_ACCESS, PA_HIDDEN, PT_DESCRIPTION, "DELTAMODE: three-phase average value of terminal voltage, per unit value",
@@ -174,9 +175,9 @@ inverter_dyn::inverter_dyn(MODULE *module)
 			PT_double, "kiVdc", PADDR(kiVdc), PT_ACCESS, PA_HIDDEN, PT_DESCRIPTION, "DELTAMODE: integral gain of Vdc_min controller",
 			PT_double, "kdVdc", PADDR(kiVdc), PT_ACCESS, PA_HIDDEN, PT_DESCRIPTION, "DELTAMODE: derivative gain of Vdc_min controller",
 
-			PT_double, "p_measure", PADDR(Pmeas_blk.x[0]), PT_ACCESS, PA_HIDDEN, PT_DESCRIPTION, "DELTAMODE: filtered active power for grid-forming inverter",
-			PT_double, "q_measure", PADDR(Qmeas_blk.x[0]), PT_ACCESS, PA_HIDDEN, PT_DESCRIPTION, "DELTAMODE: filtered reactive power for grid-forming inverter",
-			PT_double, "v_measure", PADDR(Vmeas_blk.x[0]), PT_ACCESS, PA_HIDDEN, PT_DESCRIPTION, "DELTAMODE: filtered voltage for grid-forming inverter",
+			PT_double, "p_measure", PADDR(curr_state.p_measure), PT_ACCESS, PA_HIDDEN, PT_DESCRIPTION, "DELTAMODE: filtered active power for grid-forming inverter",
+			PT_double, "q_measure", PADDR(curr_state.q_measure), PT_ACCESS, PA_HIDDEN, PT_DESCRIPTION, "DELTAMODE: filtered reactive power for grid-forming inverter",
+			PT_double, "v_measure", PADDR(curr_state.v_measure), PT_ACCESS, PA_HIDDEN, PT_DESCRIPTION, "DELTAMODE: filtered voltage for grid-forming inverter",
 
 			//DC Bus portions
 			PT_double, "V_In[V]", PADDR(V_DC), PT_DESCRIPTION, "DC input voltage",
@@ -190,29 +191,29 @@ inverter_dyn::inverter_dyn(MODULE *module)
 
 		defaults = this;
 
-		memset(this, 0, sizeof(inverter_dyn));
+		memset(this, 0, sizeof(inverter_dyn2));
 
-		if (gl_publish_function(oclass, "preupdate_gen_object", (FUNCTIONADDR)preupdate_inverter_dyn) == NULL)
-			GL_THROW("Unable to publish inverter_dyn deltamode function");
-		if (gl_publish_function(oclass, "interupdate_gen_object", (FUNCTIONADDR)interupdate_inverter_dyn) == NULL)
-			GL_THROW("Unable to publish inverter_dyn deltamode function");
-		// if (gl_publish_function(oclass, "postupdate_gen_object", (FUNCTIONADDR)postupdate_inverter_dyn) == NULL)
-		// 	GL_THROW("Unable to publish inverter_dyn deltamode function");
-		if (gl_publish_function(oclass, "current_injection_update", (FUNCTIONADDR)inverter_dyn_NR_current_injection_update) == NULL)
-			GL_THROW("Unable to publish inverter_dyn current injection update function");
-		if (gl_publish_function(oclass, "register_gen_DC_object", (FUNCTIONADDR)inverter_dyn_DC_object_register) == NULL)
-			GL_THROW("Unable to publish inverter_dyn DC registration function");
+		if (gl_publish_function(oclass, "preupdate_gen_object", (FUNCTIONADDR)preupdate_inverter_dyn2) == NULL)
+			GL_THROW("Unable to publish inverter_dyn2 deltamode function");
+		if (gl_publish_function(oclass, "interupdate_gen_object", (FUNCTIONADDR)interupdate_inverter_dyn2) == NULL)
+			GL_THROW("Unable to publish inverter_dyn2 deltamode function");
+		// if (gl_publish_function(oclass, "postupdate_gen_object", (FUNCTIONADDR)postupdate_inverter_dyn2) == NULL)
+		// 	GL_THROW("Unable to publish inverter_dyn2 deltamode function");
+		if (gl_publish_function(oclass, "current_injection_update", (FUNCTIONADDR)inverter_dyn2_NR_current_injection_update) == NULL)
+			GL_THROW("Unable to publish inverter_dyn2 current injection update function");
+		if (gl_publish_function(oclass, "register_gen_DC_object", (FUNCTIONADDR)inverter_dyn2_DC_object_register) == NULL)
+			GL_THROW("Unable to publish inverter_dyn2 DC registration function");
 	}
 }
 
 //Isa function for identification
-int inverter_dyn::isa(char *classname)
+int inverter_dyn2::isa(char *classname)
 {
-	return strcmp(classname,"inverter_dyn")==0;
+	return strcmp(classname,"inverter_dyn2")==0;
 }
 
 /* Object creation is called once for each object that is created by the core */
-int inverter_dyn::create(void)
+int inverter_dyn2::create(void)
 {
 	// Default values for Inverter object.
 	pMeterStatus = NULL;
@@ -261,14 +262,11 @@ int inverter_dyn::create(void)
 	Tq = 0.01; // s
 	Tv = 0.01; // s
 	Vset = -99.0;	//Flag value
-
-	// Parameters for QV droop block
 	kpv = 0;
 	kiv = 5.86;
 	mq = 0.05;
 	E_max = 2;
 	E_min = 0;
-
 	mp = 3.77;
 	P_f_droop = -100;
 	kppmax = 3;
@@ -358,7 +356,7 @@ int inverter_dyn::create(void)
 }
 
 /* Object initialization is called once after all object have been created */
-int inverter_dyn::init(OBJECT *parent)
+int inverter_dyn2::init(OBJECT *parent)
 {
 	OBJECT *obj = OBJECTHDR(this);
 	double temp_volt_mag;
@@ -379,7 +377,7 @@ int inverter_dyn::init(OBJECT *parent)
 		if ((parent->flags & OF_INIT) != OF_INIT)
 		{
 			char objname[256];
-			gl_verbose("inverter_dyn::init(): deferring initialization on %s", gl_name(parent, objname, 255));
+			gl_verbose("inverter_dyn2::init(): deferring initialization on %s", gl_name(parent, objname, 255));
 			return 2; // defer
 		}
 	}
@@ -388,9 +386,9 @@ int inverter_dyn::init(OBJECT *parent)
 	if (S_base <= 0)
 	{
 		S_base = 1000;
-		gl_warning("inverter_dyn:%d - %s - The rated power of this inverter must be positive - set to 1 kVA.",obj->id,(obj->name ? obj->name : "unnamed"));
+		gl_warning("inverter_dyn2:%d - %s - The rated power of this inverter must be positive - set to 1 kVA.",obj->id,(obj->name ? obj->name : "unnamed"));
 		/*  TROUBLESHOOT
-		The inverter_dyn has a rated power that is negative.  It defaulted to a 1 kVA inverter.  If this is not desired, set the property properly in the GLM.
+		The inverter_dyn2 has a rated power that is negative.  It defaulted to a 1 kVA inverter.  If this is not desired, set the property properly in the GLM.
 		*/
 	}
 
@@ -434,7 +432,7 @@ int inverter_dyn::init(OBJECT *parent)
 						//Make sure it worked
 						if ((temp_property_pointer->is_valid() != true) || (temp_property_pointer->is_bool() != true))
 						{
-							GL_THROW("inverter_dyn:%s failed to map Norton-equivalence deltamode variable from %s", obj->name ? obj->name : "unnamed", parent->name ? parent->name : "unnamed");
+							GL_THROW("inverter_dyn2:%s failed to map Norton-equivalence deltamode variable from %s", obj->name ? obj->name : "unnamed", parent->name ? parent->name : "unnamed");
 							/*  TROUBLESHOOT
 							While attempting to set up the deltamode interfaces and calculations with powerflow, the required interface could not be mapped.
 							Please check your GLM and try again.  If the error persists, please submit a trac ticket with your code.
@@ -484,9 +482,9 @@ int inverter_dyn::init(OBJECT *parent)
 			//Simple initial test - if we aren't three-phase, but are grid-forming, toss a warning
 			if (((phases & 0x07) != 0x07) && (control_mode == GRID_FORMING))
 			{
-				gl_warning("inverter_dyn:%s is in grid-forming mode, but is not a three-phase connection.  This is untested and may not behave properly.", obj->name ? obj->name : "unnamed");
+				gl_warning("inverter_dyn2:%s is in grid-forming mode, but is not a three-phase connection.  This is untested and may not behave properly.", obj->name ? obj->name : "unnamed");
 				/*  TROUBLESHOOT
-				The inverter_dyn was set up to be grid-forming, but is either a triplex or a single-phase-connected inverter.  This implementaiton is not fully tested and may either not
+				The inverter_dyn2 was set up to be grid-forming, but is either a triplex or a single-phase-connected inverter.  This implementaiton is not fully tested and may either not
 				work, or produce unexpecte results.
 				*/
 			}
@@ -497,7 +495,7 @@ int inverter_dyn::init(OBJECT *parent)
 			//Make sure it worked
 			if ((temp_property_pointer->is_valid() != true) || (temp_property_pointer->is_enumeration() != true))
 			{
-				GL_THROW("inverter_dyn:%s failed to map bustype variable from %s", obj->name ? obj->name : "unnamed", obj->parent->name ? obj->parent->name : "unnamed");
+				GL_THROW("inverter_dyn2:%s failed to map bustype variable from %s", obj->name ? obj->name : "unnamed", obj->parent->name ? obj->parent->name : "unnamed");
 				/*  TROUBLESHOOT
 				While attempting to map the bustype variable from the parent node, an error was encountered.  Please try again.  If the error
 				persists, please report it with your GLM via the issues tracking system.
@@ -624,9 +622,9 @@ int inverter_dyn::init(OBJECT *parent)
 					}
 					else //Not three-phase, but has more than one phase - fail, because we don't do this right
 					{
-						GL_THROW("inverter_dyn:%s is not connected to a single-phase or three-phase node - two-phase connections are not supported at this time.", obj->name ? obj->name : "unnamed");
+						GL_THROW("inverter_dyn2:%s is not connected to a single-phase or three-phase node - two-phase connections are not supported at this time.", obj->name ? obj->name : "unnamed");
 						/*  TROUBLESHOOT
-						The inverter_dyn only supports single phase (A, B, or C or triplex) or full three-phase connections.  If you try to connect it differntly than this, it will not work.
+						The inverter_dyn2 only supports single phase (A, B, or C or triplex) or full three-phase connections.  If you try to connect it differntly than this, it will not work.
 						*/
 					}
 				} //End non-three-phase
@@ -641,7 +639,7 @@ int inverter_dyn::init(OBJECT *parent)
 			//Make sure it worked
 			if ((temp_property_pointer->is_valid() != true) || (temp_property_pointer->is_double() != true))
 			{
-				GL_THROW("inverter_dyn:%d %s failed to map the nominal_frequency property", obj->id, (obj->name ? obj->name : "Unnamed"));
+				GL_THROW("inverter_dyn2:%d %s failed to map the nominal_frequency property", obj->id, (obj->name ? obj->name : "Unnamed"));
 				/*  TROUBLESHOOT
 				While attempting to map the nominal_frequency property, an error occurred.  Please try again.
 				If the error persists, please submit your GLM and a bug report to the ticketing system.
@@ -665,7 +663,7 @@ int inverter_dyn::init(OBJECT *parent)
 					//Make sure it worked
 					if ((temp_property_pointer->is_valid() != true) || (temp_property_pointer->is_bool() != true))
 					{
-						GL_THROW("inverter_dyn:%s failed to map Norton-equivalence deltamode variable from %s", obj->name ? obj->name : "unnamed", tmp_obj->name ? tmp_obj->name : "unnamed");
+						GL_THROW("inverter_dyn2:%s failed to map Norton-equivalence deltamode variable from %s", obj->name ? obj->name : "unnamed", tmp_obj->name ? tmp_obj->name : "unnamed");
 						//Defined elsewhere
 					}
 
@@ -684,7 +682,7 @@ int inverter_dyn::init(OBJECT *parent)
 					//Make sure it worked
 					if ((temp_property_pointer->is_valid() != true) || (temp_property_pointer->is_bool() != true))
 					{
-						GL_THROW("inverter_dyn:%s failed to map generator deltamode variable from %s", obj->name ? obj->name : "unnamed", tmp_obj->name ? tmp_obj->name : "unnamed");
+						GL_THROW("inverter_dyn2:%s failed to map generator deltamode variable from %s", obj->name ? obj->name : "unnamed", tmp_obj->name ? tmp_obj->name : "unnamed");
 						/*  TROUBLESHOOT
 						While trying to map a flag indicating a dynamic generator is attached to the system, an error was encountered.  Please
 						try your file again.  If the error persists, please submit an issue ticket.
@@ -706,7 +704,7 @@ int inverter_dyn::init(OBJECT *parent)
 				//Make sure it worked
 				if ((temp_property_pointer->is_valid() != true) || (temp_property_pointer->is_double() != true))
 				{
-					gl_error("inverter_dyn:%d %s failed to map the nominal_voltage property", obj->id, (obj->name ? obj->name : "Unnamed"));
+					gl_error("inverter_dyn2:%d %s failed to map the nominal_voltage property", obj->id, (obj->name ? obj->name : "Unnamed"));
 					/*  TROUBLESHOOT
 					While attempting to map the nominal_voltage property, an error occurred.  Please try again.
 					If the error persists, please submit your GLM and a bug report to the ticketing system.
@@ -800,7 +798,7 @@ int inverter_dyn::init(OBJECT *parent)
 					//Check it
 					if ((pbus_full_Y_mat->is_valid() != true) || (pbus_full_Y_mat->is_complex_array() != true))
 					{
-						GL_THROW("inverter_dyn:%s failed to map Norton-equivalence deltamode variable from %s", obj->name ? obj->name : "unnamed", tmp_obj->name ? tmp_obj->name : "unnamed");
+						GL_THROW("inverter_dyn2:%s failed to map Norton-equivalence deltamode variable from %s", obj->name ? obj->name : "unnamed", tmp_obj->name ? tmp_obj->name : "unnamed");
 						/*  TROUBLESHOOT
 						While attempting to set up the deltamode interfaces and calculations with powerflow, the required interface could not be mapped.
 						Please check your GLM and try again.  If the error persists, please submit a trac ticket with your code.
@@ -829,7 +827,7 @@ int inverter_dyn::init(OBJECT *parent)
 					{
 						if ((temp_complex_array.get_rows() != 3) && (temp_complex_array.get_cols() != 3))
 						{
-							GL_THROW("inverter_dyn:%s exposed Norton-equivalent matrix is the wrong size!", obj->name ? obj->name : "unnamed");
+							GL_THROW("inverter_dyn2:%s exposed Norton-equivalent matrix is the wrong size!", obj->name ? obj->name : "unnamed");
 							/*  TROUBLESHOOT
 							While mapping to an admittance matrix on the parent node device, it was found it is the wrong size.
 							Please try again.  If the error persists, please submit your code and model via the issue tracking system.
@@ -868,7 +866,7 @@ int inverter_dyn::init(OBJECT *parent)
 			//Check it
 			if ((pMeterStatus->is_valid() != true) || (pMeterStatus->is_enumeration() != true))
 			{
-				GL_THROW("Inverter_dyn failed to map powerflow status variable");
+				GL_THROW("inverter_dyn2 failed to map powerflow status variable");
 				/*  TROUBLESHOOT
 				While attempting to map the service_status variable of the parent
 				powerflow object, an error occurred.  Please try again.  If the error
@@ -933,10 +931,10 @@ int inverter_dyn::init(OBJECT *parent)
 		}	 //End valid powerflow parent
 		else //Not sure what it is
 		{
-			GL_THROW("Inverter_dyn must have a valid powerflow object as its parent, or no parent at all");
+			GL_THROW("inverter_dyn2 must have a valid powerflow object as its parent, or no parent at all");
 			/*  TROUBLESHOOT
-			Check the parent object of the inverter.  The inverter_dyn is only able to be childed via to powerflow objects.
-			Alternatively, you can also choose to have no parent, in which case the inverter_dyn will be a stand-alone application
+			Check the parent object of the inverter.  The inverter_dyn2 is only able to be childed via to powerflow objects.
+			Alternatively, you can also choose to have no parent, in which case the inverter_dyn2 will be a stand-alone application
 			using default voltage values for solving purposes.
 			*/
 		}
@@ -947,9 +945,9 @@ int inverter_dyn::init(OBJECT *parent)
 		parent_is_a_meter = false;
 		parent_is_single_phase = false;
 
-		gl_warning("inverter_dyn:%d has no parent meter object defined; using static voltages", obj->id);
+		gl_warning("inverter_dyn2:%d has no parent meter object defined; using static voltages", obj->id);
 		/*  TROUBLESHOOT
-		An inverter_dyn in the system does not have a parent attached.  It is using static values for the voltage.
+		An inverter_dyn2 in the system does not have a parent attached.  It is using static values for the voltage.
 		*/
 
 		// Declare all 3 phases
@@ -977,9 +975,9 @@ int inverter_dyn::init(OBJECT *parent)
 		//Check global, for giggles
 		if (enable_subsecond_models != true)
 		{
-			gl_warning("inverter_dyn:%s indicates it wants to run deltamode, but the module-level flag is not set!", obj->name ? obj->name : "unnamed");
+			gl_warning("inverter_dyn2:%s indicates it wants to run deltamode, but the module-level flag is not set!", obj->name ? obj->name : "unnamed");
 			/*  TROUBLESHOOT
-			The inverter_dyn object has the deltamode_inclusive flag set, but not the module-level enable_subsecond_models flag.  The generator
+			The inverter_dyn2 object has the deltamode_inclusive flag set, but not the module-level enable_subsecond_models flag.  The generator
 			will not simulate any dynamics this way.
 			*/
 		}
@@ -994,10 +992,10 @@ int inverter_dyn::init(OBJECT *parent)
 	{
 		if (enable_subsecond_models == true)
 		{
-			gl_warning("inverter_dyn:%d %s - Deltamode is enabled for the module, but not this inverter!", obj->id, (obj->name ? obj->name : "Unnamed"));
+			gl_warning("inverter_dyn2:%d %s - Deltamode is enabled for the module, but not this inverter!", obj->id, (obj->name ? obj->name : "Unnamed"));
 			/*  TROUBLESHOOT
-			The inverter_dyn is not flagged for deltamode operations, yet deltamode simulations are enabled for the overall system.  When deltamode
-			triggers, this inverter_dyn may no longer contribute to the system, until event-driven mode resumes.  This could cause issues with the simulation.
+			The inverter_dyn2 is not flagged for deltamode operations, yet deltamode simulations are enabled for the overall system.  When deltamode
+			triggers, this inverter_dyn2 may no longer contribute to the system, until event-driven mode resumes.  This could cause issues with the simulation.
 			It is recommended all objects that support deltamode enable it.
 			*/
 		}
@@ -1052,7 +1050,7 @@ int inverter_dyn::init(OBJECT *parent)
 
 }
 
-TIMESTAMP inverter_dyn::presync(TIMESTAMP t0, TIMESTAMP t1)
+TIMESTAMP inverter_dyn2::presync(TIMESTAMP t0, TIMESTAMP t1)
 {
 	TIMESTAMP t2 = TS_NEVER;
 	OBJECT *obj = OBJECTHDR(this);
@@ -1070,7 +1068,7 @@ TIMESTAMP inverter_dyn::presync(TIMESTAMP t0, TIMESTAMP t1)
 	return t2;
 }
 
-TIMESTAMP inverter_dyn::sync(TIMESTAMP t0, TIMESTAMP t1)
+TIMESTAMP inverter_dyn2::sync(TIMESTAMP t0, TIMESTAMP t1)
 {
 	OBJECT *obj = OBJECTHDR(this);
 	TIMESTAMP tret_value;
@@ -1185,7 +1183,7 @@ TIMESTAMP inverter_dyn::sync(TIMESTAMP t0, TIMESTAMP t1)
 				//See if it was located
 				if (test_fxn == NULL)
 				{
-					GL_THROW("inverter_dyn:%s - failed to map additional current injection mapping for node:%s", (obj->name ? obj->name : "unnamed"), (obj->parent->name ? obj->parent->name : "unnamed"));
+					GL_THROW("inverter_dyn2:%s - failed to map additional current injection mapping for node:%s", (obj->name ? obj->name : "unnamed"), (obj->parent->name ? obj->parent->name : "unnamed"));
 					/*  TROUBLESHOOT
 					While attempting to map the additional current injection function, an error was encountered.
 					Please try again.  If the error persists, please submit your code and a bug report via the trac website.
@@ -1198,7 +1196,7 @@ TIMESTAMP inverter_dyn::sync(TIMESTAMP t0, TIMESTAMP t1)
 				//Make sure it worked
 				if (fxn_return_status != SUCCESS)
 				{
-					GL_THROW("inverter_dyn:%s - failed to map additional current injection mapping for node:%s", (obj->name ? obj->name : "unnamed"), (obj->parent->name ? obj->parent->name : "unnamed"));
+					GL_THROW("inverter_dyn2:%s - failed to map additional current injection mapping for node:%s", (obj->name ? obj->name : "unnamed"), (obj->parent->name ? obj->parent->name : "unnamed"));
 					//Defined above
 				}
 			}
@@ -1401,7 +1399,7 @@ TIMESTAMP inverter_dyn::sync(TIMESTAMP t0, TIMESTAMP t1)
 }
 
 /* Update the injected currents with respect to VA_Out */
-void inverter_dyn::update_iGen(complex VA_Out)
+void inverter_dyn2::update_iGen(complex VA_Out)
 {
 	char loop_var;
 
@@ -1447,7 +1445,7 @@ void inverter_dyn::update_iGen(complex VA_Out)
 }
 
 /* Check the inverter output and make sure it is in the limit */
-bool inverter_dyn::check_and_update_VA_Out(OBJECT *obj)
+bool inverter_dyn2::check_and_update_VA_Out(OBJECT *obj)
 {
 	bool flag_VA_Out_changed = false;
 
@@ -1468,14 +1466,14 @@ bool inverter_dyn::check_and_update_VA_Out(OBJECT *obj)
 		double P_Out_lim = pvc_Pmax;
 		if (S_base < pvc_Pmax) //i.e., double P_Out_lim = S_base < pvc_Pmax ? S_base : pvc_Pmax;
 		{	
-			gl_warning("inverter_dyn:%d - %s - P_Out is capped at a rated power of %f [W].",obj->id,(obj->name ? obj->name : "unnamed"), S_base);
+			gl_warning("inverter_dyn2:%d - %s - P_Out is capped at a rated power of %f [W].",obj->id,(obj->name ? obj->name : "unnamed"), S_base);
 			P_Out_lim = S_base;
 		}
 		double P_Out_lim_flr = floor(P_Out_lim); //P_Out_lim is always positive; And this is important to guarantee that the VA_Out.Re() will be smaller than pvc_Pmax.
 
 		if (abs(P_Out) > P_Out_lim_flr)
 		{
-			gl_warning("inverter_dyn:%d - %s - The absolute value of P_Out (%f [W] required by powerflow) is capped at %f [W].",obj->id,(obj->name ? obj->name : "unnamed"), P_Out, P_Out_lim_flr);
+			gl_warning("inverter_dyn2:%d - %s - The absolute value of P_Out (%f [W] required by powerflow) is capped at %f [W].",obj->id,(obj->name ? obj->name : "unnamed"), P_Out, P_Out_lim_flr);
 
 			P_Out = copysign(P_Out_lim_flr, P_Out);
 			flag_VA_Out_changed = true;
@@ -1483,7 +1481,7 @@ bool inverter_dyn::check_and_update_VA_Out(OBJECT *obj)
 
 		if (abs(Pref) > P_Out_lim_flr)
 		{
-			gl_warning("inverter_dyn:%d - %s - The absolute value of Pref (%f [W] set by the user) is capped at %f [W].",obj->id,(obj->name ? obj->name : "unnamed"), Pref, P_Out_lim_flr);
+			gl_warning("inverter_dyn2:%d - %s - The absolute value of Pref (%f [W] set by the user) is capped at %f [W].",obj->id,(obj->name ? obj->name : "unnamed"), Pref, P_Out_lim_flr);
 
 			Pref = copysign(P_Out_lim_flr, Pref);
 		}
@@ -1493,7 +1491,7 @@ bool inverter_dyn::check_and_update_VA_Out(OBJECT *obj)
 
 		if (Q_Out_lim_sq < 0) // Technically, there is no need to check the 'Q_Out_lim_sq', but there is no harm to double check
 		{
-			GL_THROW("inverter_dyn:%d - %s - Rated power (%f [W]) must be at least 70.71% of the P_Out (%f) [W]",obj->id,(obj->name?obj->name:"Unnamed"),S_base, P_Out);
+			GL_THROW("inverter_dyn2:%d - %s - Rated power (%f [W]) must be at least 70.71% of the P_Out (%f) [W]",obj->id,(obj->name?obj->name:"Unnamed"),S_base, P_Out);
 		}
 		else
 		{
@@ -1501,7 +1499,7 @@ bool inverter_dyn::check_and_update_VA_Out(OBJECT *obj)
 
 			if (abs(Q_Out) > Q_Out_lim_flr)
 			{
-				gl_warning("inverter_dyn:%d - %s - Magnitude of Q_Out (%f [var] required by powerflow) is be capped at %f [var].",obj->id,(obj->name ? obj->name : "unnamed"), Q_Out, Q_Out_lim_flr);
+				gl_warning("inverter_dyn2:%d - %s - Magnitude of Q_Out (%f [var] required by powerflow) is be capped at %f [var].",obj->id,(obj->name ? obj->name : "unnamed"), Q_Out, Q_Out_lim_flr);
 
 				Q_Out = copysign(Q_Out_lim_flr, Q_Out);
 				flag_VA_Out_changed = true;
@@ -1509,7 +1507,7 @@ bool inverter_dyn::check_and_update_VA_Out(OBJECT *obj)
 
 			if (abs(Qref) > Q_Out_lim_flr)
 			{
-				gl_warning("inverter_dyn:%d - %s - Absolute value of Qref is capped at %f [var].",obj->id,(obj->name ? obj->name : "unnamed"), Q_Out_lim_flr);
+				gl_warning("inverter_dyn2:%d - %s - Absolute value of Qref is capped at %f [var].",obj->id,(obj->name ? obj->name : "unnamed"), Q_Out_lim_flr);
 
 				Qref = copysign(Q_Out_lim_flr, Qref);
 			}
@@ -1545,7 +1543,7 @@ bool inverter_dyn::check_and_update_VA_Out(OBJECT *obj)
 					OBJECT *temp_obj = dc_interface_objects[temp_idx].dc_object;
 
 					//Error it up
-					GL_THROW("inverter_dyn:%d - %s - DC object update for object:%d - %s - failed!", obj->id, (obj->name ? obj->name : "Unnamed"), temp_obj->id, (temp_obj->name ? temp_obj->name : "Unnamed"));
+					GL_THROW("inverter_dyn2:%d - %s - DC object update for object:%d - %s - failed!", obj->id, (obj->name ? obj->name : "Unnamed"), temp_obj->id, (temp_obj->name ? temp_obj->name : "Unnamed"));
 					//Defined above
 				}
 			}
@@ -1558,7 +1556,7 @@ bool inverter_dyn::check_and_update_VA_Out(OBJECT *obj)
 }
 
 /* Postsync is called when the clock needs to advance on the second top-down pass */
-TIMESTAMP inverter_dyn::postsync(TIMESTAMP t0, TIMESTAMP t1)
+TIMESTAMP inverter_dyn2::postsync(TIMESTAMP t0, TIMESTAMP t1)
 {
 	OBJECT *obj = OBJECTHDR(this);
 	TIMESTAMP t2 = TS_NEVER; //By default, we're done forever!
@@ -1620,7 +1618,7 @@ TIMESTAMP inverter_dyn::postsync(TIMESTAMP t0, TIMESTAMP t1)
 // IMPLEMENTATION OF DELTA MODE
 //////////////////////////////////////////////////////////////////////////
 //Preupdate
-STATUS inverter_dyn::pre_deltaupdate(TIMESTAMP t0, unsigned int64 delta_time)
+STATUS inverter_dyn2::pre_deltaupdate(TIMESTAMP t0, unsigned int64 delta_time)
 {
 	STATUS stat_val;
 	FUNCTIONADDR funadd = NULL;
@@ -1631,9 +1629,9 @@ STATUS inverter_dyn::pre_deltaupdate(TIMESTAMP t0, unsigned int64 delta_time)
 
 	if (stat_val != SUCCESS)
 	{
-		gl_error("Inverter_dyn failed pre_deltaupdate call");
+		gl_error("inverter_dyn2 failed pre_deltaupdate call");
 		/*  TROUBLESHOOT
-		While attempting to call the pre_deltaupdate portion of the inverter_dyn code, an error
+		While attempting to call the pre_deltaupdate portion of the inverter_dyn2 code, an error
 		was encountered.  Please submit your code and a bug report via the ticketing system.
 		*/
 
@@ -1649,10 +1647,10 @@ STATUS inverter_dyn::pre_deltaupdate(TIMESTAMP t0, unsigned int64 delta_time)
 		//make sure it worked
 		if (funadd == NULL)
 		{
-			gl_error("inverter_dyn:%s -- Failed to find node swing swapper function", (hdr->name ? hdr->name : "Unnamed"));
+			gl_error("inverter_dyn2:%s -- Failed to find node swing swapper function", (hdr->name ? hdr->name : "Unnamed"));
 			/*  TROUBLESHOOT
 			While attempting to map the function to change the swing status of the parent bus, the function could not be found.
-			Ensure the inverter_dyn is actually attached to something.  If the error persists, please submit your code and a bug report
+			Ensure the inverter_dyn2 is actually attached to something.  If the error persists, please submit your code and a bug report
 			via the ticketing/issues system.
 			*/
 
@@ -1664,7 +1662,7 @@ STATUS inverter_dyn::pre_deltaupdate(TIMESTAMP t0, unsigned int64 delta_time)
 
 		if (stat_val == 0) //Failed :(
 		{
-			gl_error("Failed to swap SWING status of node:%s on inverter_dyn:%s", (hdr->parent->name ? hdr->parent->name : "Unnamed"), (hdr->name ? hdr->name : "Unnamed"));
+			gl_error("Failed to swap SWING status of node:%s on inverter_dyn2:%s", (hdr->parent->name ? hdr->parent->name : "Unnamed"), (hdr->name ? hdr->name : "Unnamed"));
 			/*  TROUBLESHOOT
 			While attempting to handle special reliability actions on a "special" device (switch, recloser, etc.), the function required
 			failed to execute properly.  If the problem persists, please submit a bug report and your code to the trac website.
@@ -1679,7 +1677,7 @@ STATUS inverter_dyn::pre_deltaupdate(TIMESTAMP t0, unsigned int64 delta_time)
 }
 
 //Module-level call
-SIMULATIONMODE inverter_dyn::inter_deltaupdate(unsigned int64 delta_time, unsigned long dt, unsigned int iteration_count_val)
+SIMULATIONMODE inverter_dyn2::inter_deltaupdate(unsigned int64 delta_time, unsigned long dt, unsigned int iteration_count_val)
 {
 	double deltat, deltath;
 	double mag_diff_val;
@@ -1692,12 +1690,6 @@ SIMULATIONMODE inverter_dyn::inter_deltaupdate(unsigned int64 delta_time, unsign
 	OBJECT *obj = OBJECTHDR(this);
 
 	SIMULATIONMODE simmode_return_value = SM_EVENT;
-
-	double v_measured; // Output of voltage measurement block
-	double p_measured; // Output of active power measurement block
-	double q_measured; // Output of reactive power measurement block
-	double delta_w;    // angular velocity deviation
-	double Angle[3];   // Angle for internal voltage source (output of P-f control integrator block
 
 	//If we have a meter, reset the accumulators
 	if (parent_is_a_meter == true)
@@ -1766,7 +1758,7 @@ SIMULATIONMODE inverter_dyn::inter_deltaupdate(unsigned int64 delta_time, unsign
 							temp_DC_obj = dc_interface_objects[temp_dc_idx].dc_object;
 
 							//Error it up
-							GL_THROW("inverter_dyn:%d - %s - DC object update for object:%d - %s - failed!", obj->id, (obj->name ? obj->name : "Unnamed"), temp_DC_obj->id, (temp_DC_obj->name ? temp_DC_obj->name : "Unnamed"));
+							GL_THROW("inverter_dyn2:%d - %s - DC object update for object:%d - %s - failed!", obj->id, (obj->name ? obj->name : "Unnamed"), temp_DC_obj->id, (temp_DC_obj->name ? temp_DC_obj->name : "Unnamed"));
 							//Defined elsewhere
 						}
 					}
@@ -1808,27 +1800,28 @@ SIMULATIONMODE inverter_dyn::inter_deltaupdate(unsigned int64 delta_time, unsign
 				VA_Out = power_val[0] + power_val[1] + power_val[2];
 
 				// The following code is only for three phase system
-
 				// Function: Low pass filter of P
 				P_out_pu = VA_Out.Re() / S_base;
-
-				// Output of active power measurement block
-				p_measured = Pmeas_blk.getoutput(P_out_pu,deltat,PREDICTOR);
+				pred_state.dp_measure = 1.0 / Tp * (P_out_pu - curr_state.p_measure);
+				pred_state.p_measure = curr_state.p_measure + (deltat * pred_state.dp_measure);
 
 				// VA_OUT.Re() refers to the output active power from the inverter.
 				// S_base is the rated capacity
 				// P_out_pu is the per unit value of VA_OUT.Re()
-				// p_measured is the filtered active power, it is per-unit value
+				// p_measure is the filtered active power, it is per-unit value
+				// Tp is the time constant of low pass filter, it is per-unit value
+				// Function end
 
 				// Function: Low pass filter of Q
 				Q_out_pu = VA_Out.Im() / S_base;
-
-				// Output of reactive power measurement block
-				q_measured = Qmeas_blk.getoutput(Q_out_pu,deltat,PREDICTOR);
+				pred_state.dq_measure = 1.0 / Tq * (Q_out_pu - curr_state.q_measure);
+				pred_state.q_measure = curr_state.q_measure + (deltat * pred_state.dq_measure);
 
 				// VA_OUT.Im() refers to the output reactive power from the inverter
 				// Q_out_pu is the per-unit value of VA_Out.Im()
-				// q_measured is the filtered reactive power, it is per-unit value
+				// q_measure is the filtered reactive power, it is per-unit value
+				// Tq is the time constant of low pass filter, it is per-unit value
+				// Function end
 
 				if (grid_forming_mode == DYNAMIC_DC_BUS) // consider the dynamics of PV dc bus
 				{
@@ -1856,7 +1849,7 @@ SIMULATIONMODE inverter_dyn::inter_deltaupdate(unsigned int64 delta_time, unsign
 								OBJECT *temp_obj = dc_interface_objects[temp_idx].dc_object;
 
 								//Error it up
-								GL_THROW("inverter_dyn:%d - %s - DC object update for object:%d - %s - failed!", obj->id, (obj->name ? obj->name : "Unnamed"), temp_obj->id, (temp_obj->name ? temp_obj->name : "Unnamed"));
+								GL_THROW("inverter_dyn2:%d - %s - DC object update for object:%d - %s - failed!", obj->id, (obj->name ? obj->name : "Unnamed"), temp_obj->id, (temp_obj->name ? temp_obj->name : "Unnamed"));
 								//Defined above
 							}
 						}
@@ -1873,35 +1866,157 @@ SIMULATIONMODE inverter_dyn::inter_deltaupdate(unsigned int64 delta_time, unsign
 
 				// Function: Low pass filter of V
 				pCircuit_V_Avg_pu = (value_Circuit_V[0].Mag() + value_Circuit_V[1].Mag() + value_Circuit_V[2].Mag()) / 3.0 / V_base;
+				pred_state.dv_measure = 1.0 / Tv * (pCircuit_V_Avg_pu - curr_state.v_measure);
+				pred_state.v_measure = curr_state.v_measure + (deltat * pred_state.dv_measure);
 
-				// v_measured refers to filtered voltage, it is per-unit value
-				v_measured = Vmeas_blk.getoutput(pCircuit_V_Avg_pu,deltat,PREDICTOR);
+				// Value_Circuit_V[i] refers to the voltage of each phase at the grid side
+				// Vbase is the rated Line to ground voltage
+				// pCircuit_V_Avg_pu refers to the average value of three phase voltages, it is per-unit value
+				// v_measure refers to filtered voltage, it is per-unit value
+				// Tv is the time constant of low pass filter
+				// Function end
 
 				// Function: Q-V droop control and voltage control loop
-				V_ref = Vset - q_measured * mq;
+				V_ref = Vset - pred_state.q_measure * mq;
+				pred_state.dV_ini = (V_ref - pred_state.v_measure) * kiv;
+				pred_state.V_ini = curr_state.V_ini + pred_state.dV_ini * deltat;
 
 				if (grid_forming_mode == DYNAMIC_DC_BUS) // consider the dynamics of PV dc bus, and the internal voltage magnitude needs to be recalculated
 				{
-				  E_mag = QV_blk.getoutput(V_ref-v_measured,deltat,E_min,pred_state.Vdc_pu*mdc,E_min,pred_state.Vdc_pu*mdc,PREDICTOR);
 
+					if (pred_state.V_ini > pred_state.Vdc_pu * mdc) // E_max = 1.2, V_DC/Vdc_base
+					{
+						pred_state.V_ini = pred_state.Vdc_pu * mdc;
+					}
+
+					if (pred_state.V_ini < E_min) // E_min = 0
+					{
+						pred_state.V_ini = E_min;
+					}
+
+					E_mag = pred_state.V_ini + pred_state.dV_ini / kiv * kpv;
+
+					if (E_mag > pred_state.Vdc_pu * mdc) // E_max = 1
+					{
+						E_mag = pred_state.Vdc_pu * mdc;
+					}
+
+					if (E_mag < E_min) // E_min = 0
+					{
+						E_mag = E_min;
+					}
+
+					//E_mag = E_mag * (V_DC/Vdc_base);
+
+					// V_ref is the voltage reference obtained from Q-V droop
+					// Vset is the voltage set point, usually 1 pu
+					// mq is the Q-V droop gain, usually 0.05 pu
+					// V_ini is the output from the integrator in the voltage controller
+					// E_mag is the output of the votlage controller, it is the voltage magnitude of the internal voltage
+					// E_max and E_min are the maximum and minimum of the output of voltage controller
+					// Function end
 				}
 				else
 				{
-				  E_mag = QV_blk.getoutput(V_ref-v_measured,deltat,PREDICTOR);
-				  // E_mag is the output of the votlage controller, it is the voltage magnitude of the internal voltage
+
+					if (pred_state.V_ini > E_max) // E_max = 1.2, V_DC/Vdc_base
+					{
+						pred_state.V_ini = E_max;
+					}
+
+					if (pred_state.V_ini < E_min) // E_min = 0
+					{
+						pred_state.V_ini = E_min;
+					}
+
+					E_mag = pred_state.V_ini + pred_state.dV_ini / kiv * kpv;
+
+					if (E_mag > E_max) // E_max = 1
+					{
+						E_mag = E_max;
+					}
+
+					if (E_mag < E_min) // E_min = 0
+					{
+						E_mag = E_min;
+					}
+
+					// V_ref is the voltage reference obtained from Q-V droop
+					// Vset is the voltage set point, usually 1 pu
+					// mq is the Q-V droop gain, usually 0.05 pu
+					// V_ini is the output from the integrator in the voltage controller
+					// E_mag is the output of the votlage controller, it is the voltage magnitude of the internal voltage
+					// E_max and E_min are the maximum and minimum of the output of voltage controller
+					// Function end
 				}
 
+
+
 				// Function: P-f droop, Pmax and Pmin controller
-				delta_w_droop = (Pset - p_measured) * mp; // P-f droop
+				delta_w_droop = (Pset - pred_state.p_measure) * mp; // P-f droop
 
-				// Output of Pmin, Pmax freq. controller blocks
-				delta_w_Pmax = Pmaxfreq_blk.getoutput(Pmax - p_measured,deltat,PREDICTOR);
-				delta_w_Pmin = Pminfreq_blk.getoutput(Pmin - p_measured,deltat,PREDICTOR);
+				// Pmax controller
+				pred_state.ddelta_w_Pmax_ini = (Pmax - pred_state.p_measure) * kipmax;
+				pred_state.delta_w_Pmax_ini = curr_state.delta_w_Pmax_ini + pred_state.ddelta_w_Pmax_ini * deltat;
 
-				delta_w = delta_w_droop + delta_w_Pmax + delta_w_Pmin + 2.0 * PI * fset - w_ref; //the summation of the outputs from P-f droop, Pmax control and Pmin control
+				if (pred_state.delta_w_Pmax_ini > 0)
+				{
+					pred_state.delta_w_Pmax_ini = 0;
+				}
+
+				if (pred_state.delta_w_Pmax_ini < -w_lim) // -w_lim = -50
+				{
+					pred_state.delta_w_Pmax_ini = -w_lim;
+				}
+
+				delta_w_Pmax = pred_state.delta_w_Pmax_ini + pred_state.ddelta_w_Pmax_ini / kipmax * kppmax; //output from Pmax controller
+
+				if (delta_w_Pmax > 0) //
+				{
+					delta_w_Pmax = 0;
+				}
+
+				if (delta_w_Pmax < -w_lim) // -w_lim = -50
+				{
+					delta_w_Pmax = -w_lim;
+				}
+
+				// Pmin controller
+				pred_state.ddelta_w_Pmin_ini = (Pmin - pred_state.p_measure) * kipmax;
+				pred_state.delta_w_Pmin_ini = curr_state.delta_w_Pmin_ini + pred_state.ddelta_w_Pmin_ini * deltat;
+
+				if (pred_state.delta_w_Pmin_ini < 0) //
+				{
+					pred_state.delta_w_Pmin_ini = 0;
+				}
+
+				if (pred_state.delta_w_Pmin_ini > w_lim) // w_lim = 50
+				{
+					pred_state.delta_w_Pmin_ini = w_lim;
+				}
+
+				delta_w_Pmin = pred_state.delta_w_Pmin_ini + pred_state.ddelta_w_Pmin_ini / kipmax * kppmax; // output from Pmin controller
+
+				if (delta_w_Pmin < 0) //
+				{
+					delta_w_Pmin = 0;
+				}
+
+				if (delta_w_Pmin > w_lim) // w_lim = 50
+				{
+					delta_w_Pmin = w_lim;
+				}
+
+				pred_state.delta_w = delta_w_droop + delta_w_Pmax + delta_w_Pmin + 2.0 * PI * fset - w_ref; //the summation of the outputs from P-f droop, Pmax control and Pmin control
 
 				// delta_w_droop is the output of P-f droop
 				// Pset is the power set point
+				// delta_w_Pmax_ini and delta_w_Pmin_ini are the outputs of the integrator of Pmax controller and Pmin controller
+				// delta_w_Pmax and delta_w_Pmin are the outputs of Pmax controller and Pmin controller
+				// Pmax and Pmin are the maximum limit and minimum limit of Pmax controller and Pmin controller
+				// w_lim is the saturation limit
+				// w_ref is the rated frequency, usually 376.99 rad/s
+				// Function end
 
 				if (grid_forming_mode == DYNAMIC_DC_BUS) // consider the dynamics of PV dc bus, and the internal voltage magnitude needs to be recalculated
 				{
@@ -1922,18 +2037,17 @@ SIMULATIONMODE inverter_dyn::inter_deltaupdate(unsigned int64 delta_time, unsign
 						delta_w_Vdc_min = 0;
 					}
 
-					delta_w += delta_w_Vdc_min;
+					pred_state.delta_w = pred_state.delta_w + delta_w_Vdc_min; //the summation of the outputs from P-f droop, Pmax control and Pmin control, and Vdc_min control
 				}
 
-				freq = (delta_w + w_ref) / 2.0 / PI; // The frequency from the CERTS Droop controller, Hz
+				freq = (pred_state.delta_w + w_ref) / 2.0 / PI; // The frequency from the CERTS Droop controller, Hz
 
 				// Function: Obtaining the Phase Angle, and obtaining the compelx value of internal voltages and their Norton Equivalence for power flow analysis
 				for (i = 0; i < 3; i++)
 				{
-				  Angle[i] = Angle_blk[i].getoutput(delta_w,deltat,PREDICTOR);
-
-				  e_source[i] = complex(E_mag * cos(Angle[i]), E_mag * sin(Angle[i])) * V_base; // transfers back to non-per-unit values
-				  value_IGenerated[i] = e_source[i] / (complex(Rfilter, Xfilter) * Z_base);							// Thevenin voltage source to Norton current source convertion
+					pred_state.Angle[i] = curr_state.Angle[i] + pred_state.delta_w * deltat;							//Obtain the phase angle
+					e_source[i] = complex(E_mag * cos(pred_state.Angle[i]), E_mag * sin(pred_state.Angle[i])) * V_base; // transfers back to non-per-unit values
+					value_IGenerated[i] = e_source[i] / (complex(Rfilter, Xfilter) * Z_base);							// Thevenin voltage source to Norton current source convertion
 				}
 
 				// Angle[i] refers to the phase angle of internal voltage for each phase
@@ -1973,22 +2087,21 @@ SIMULATIONMODE inverter_dyn::inter_deltaupdate(unsigned int64 delta_time, unsign
 
 				// The following code is only for three phase system
 				// Function: Low pass filter of P
-
 				P_out_pu = VA_Out.Re() / S_base;
-
-				// Output of active power measurement block
-				p_measured = Pmeas_blk.getoutput(P_out_pu,deltat,CORRECTOR);
+				next_state.dp_measure = 1.0 / Tp * (P_out_pu - pred_state.p_measure);
+				next_state.p_measure = curr_state.p_measure + (pred_state.dp_measure + next_state.dp_measure) * deltat / 2.0;
 
 				// VA_OUT.Re() refers to the output active power from the inverter, this should be normalized.
 				// S_base is the rated capacity
 				// P_out_pu is the per unit value of VA_OUT.Re()
-				// p_measured is the filtered active power, it is per-unit value
+				// p_measure is the filtered active power, it is per-unit value
+				// Tp is the time constant of low pass filter, it is per-unit value
+				// Function end
 
 				// Function: Low pass filter of Q
 				Q_out_pu = VA_Out.Im() / S_base;
-
-				// Output of reactive power measurement block
-				q_measured = Qmeas_blk.getoutput(Q_out_pu,deltat,CORRECTOR);
+				next_state.dq_measure = 1.0 / Tq * (Q_out_pu - pred_state.q_measure);
+				next_state.q_measure = curr_state.q_measure + (pred_state.dq_measure + next_state.dq_measure) * deltat / 2.0;
 
 				// VA_OUT.Im() refers to the output reactive power from the inverter
 				// Q_out_pu is the per-unit value of VA_Out.Im()
@@ -2022,7 +2135,7 @@ SIMULATIONMODE inverter_dyn::inter_deltaupdate(unsigned int64 delta_time, unsign
 								OBJECT *temp_obj = dc_interface_objects[temp_idx].dc_object;
 
 								//Error it up
-								GL_THROW("inverter_dyn:%d - %s - DC object update for object:%d - %s - failed!", obj->id, (obj->name ? obj->name : "Unnamed"), temp_obj->id, (temp_obj->name ? temp_obj->name : "Unnamed"));
+								GL_THROW("inverter_dyn2:%d - %s - DC object update for object:%d - %s - failed!", obj->id, (obj->name ? obj->name : "Unnamed"), temp_obj->id, (temp_obj->name ? temp_obj->name : "Unnamed"));
 								//Defined above
 							}
 						}
@@ -2039,38 +2152,155 @@ SIMULATIONMODE inverter_dyn::inter_deltaupdate(unsigned int64 delta_time, unsign
 
 				// Function: Low pass filter of V
 				pCircuit_V_Avg_pu = (value_Circuit_V[0].Mag() + value_Circuit_V[1].Mag() + value_Circuit_V[2].Mag()) / 3.0 / V_base;
+				next_state.dv_measure = 1.0 / Tv * (pCircuit_V_Avg_pu - pred_state.v_measure);
+				next_state.v_measure = curr_state.v_measure + (pred_state.dv_measure + next_state.dv_measure) * deltat / 2.0;
 
-				// v_measured refers to filtered voltage, it is per-unit value
-				v_measured = Vmeas_blk.getoutput(pCircuit_V_Avg_pu,deltat,CORRECTOR);
+				// Value_Circuit_V[i] refers to te voltage of each phase at the inverter terminal
+				// Vbase is the rated Line to ground voltage
+				// pCircuit_V_Avg_pu refers to the average value of three phase voltages, it is per-unit value
+				// v_measure refers to filtered voltage, it is per-unit value
+				// Function end
 
 				// Function: Q-V droop control and voltage control loop
-				V_ref = Vset - q_measured * mq;
+				V_ref = Vset - next_state.q_measure * mq;
+				next_state.dV_ini = (V_ref - next_state.v_measure) * kiv;
+				next_state.V_ini = curr_state.V_ini + (pred_state.dV_ini + next_state.dV_ini) * deltat / 2.0;
 
 				if (grid_forming_mode == DYNAMIC_DC_BUS) // consider the dynamics of PV dc bus, and the internal voltage magnitude needs to be recalculated
 				{
-				  E_mag = QV_blk.getoutput(V_ref-v_measured,deltat,E_min,next_state.Vdc_pu*mdc,E_min,next_state.Vdc_pu*mdc,CORRECTOR);
+					if (next_state.V_ini > next_state.Vdc_pu * mdc) // E_max = 1.2, V_DC/Vdc_base
+					{
+						next_state.V_ini = next_state.Vdc_pu * mdc;
+					}
 
-				  // E_mag is the output of the votlage controller, it is the voltage magnitude of the internal voltage
+					if (next_state.V_ini < E_min) // E_min = 0
+					{
+						next_state.V_ini = E_min;
+					}
+
+					E_mag = next_state.V_ini + next_state.dV_ini / kiv * kpv;
+
+					if (E_mag > next_state.Vdc_pu * mdc) // E_max = 1.2
+					{
+						E_mag = next_state.Vdc_pu * mdc;
+					}
+
+					if (E_mag < E_min) // E_min = 0
+					{
+						E_mag = E_min;
+					}
+
+					//E_mag = E_mag * (V_DC/Vdc_base);
+
+					// V_ref is the voltage reference obtained from Q-V droop
+					// Vset is the voltage set point, usually 1 pu
+					// mq is the Q-V droop gain, usually 0.05 pu
+					// V_ini is the output from the integrator in the voltage controller
+					// E_mag is the output of the votlage controller, it is the voltage magnitude of the internal voltage
+					// E_max and E_min are the maximum and minimum of the output of voltage controller
+					// Function end
 				}
 				else
 				{
 
-				  E_mag = QV_blk.getoutput(V_ref-v_measured,deltat,CORRECTOR);
-				  // E_mag is the output of the votlage controller, it is the voltage magnitude of the internal voltage
+					if (next_state.V_ini > E_max) // E_max = 1.2, V_DC/Vdc_base
+					{
+						next_state.V_ini = E_max;
+					}
+
+					if (next_state.V_ini < E_min) // E_min = 0
+					{
+						next_state.V_ini = E_min;
+					}
+
+					E_mag = next_state.V_ini + next_state.dV_ini / kiv * kpv;
+
+					if (E_mag > E_max) // E_max = 1.2
+					{
+						E_mag = E_max;
+					}
+
+					if (E_mag < E_min) // E_min = 0
+					{
+						E_mag = E_min;
+					}
+
+					//E_mag = E_mag * (V_DC/Vdc_base);
+
+					// V_ref is the voltage reference obtained from Q-V droop
+					// Vset is the voltage set point, usually 1 pu
+					// mq is the Q-V droop gain, usually 0.05 pu
+					// V_ini is the output from the integrator in the voltage controller
+					// E_mag is the output of the votlage controller, it is the voltage magnitude of the internal voltage
+					// E_max and E_min are the maximum and minimum of the output of voltage controller
+					// Function end
 				}
 
 				// Function: P-f droop, Pmax and Pmin controller
-				delta_w_droop = (Pset - p_measured) * mp; // P-f droop
+				delta_w_droop = (Pset - next_state.p_measure) * mp; // P-f droop
 
-				// Pmin, Pmax freq. controller output
-				delta_w_Pmax = Pmaxfreq_blk.getoutput(Pmax - p_measured,deltat,CORRECTOR);
-				delta_w_Pmin = Pminfreq_blk.getoutput(Pmin - p_measured,deltat,CORRECTOR);
+				// Pmax controller
+				next_state.ddelta_w_Pmax_ini = (Pmax - next_state.p_measure) * kipmax;
+				next_state.delta_w_Pmax_ini = curr_state.delta_w_Pmax_ini + (pred_state.ddelta_w_Pmax_ini + next_state.ddelta_w_Pmax_ini) * deltat / 2.0;
 
-				delta_w = delta_w_droop + delta_w_Pmax + delta_w_Pmin + 2.0 * PI * fset - w_ref; //the summation of the outputs from P-f droop, Pmax control and Pmin control
-				next_state.delta_w = delta_w;
+				if (next_state.delta_w_Pmax_ini > 0) //
+				{
+					next_state.delta_w_Pmax_ini = 0;
+				}
+
+				if (next_state.delta_w_Pmax_ini < -w_lim) // -w_lim = -50
+				{
+					next_state.delta_w_Pmax_ini = -w_lim;
+				}
+
+				delta_w_Pmax = next_state.delta_w_Pmax_ini + next_state.ddelta_w_Pmax_ini / kipmax * kppmax; //output from Pmax controller
+
+				if (delta_w_Pmax > 0) //
+				{
+					delta_w_Pmax = 0;
+				}
+
+				if (delta_w_Pmax < -w_lim) // -w_lim = -50
+				{
+					delta_w_Pmax = -w_lim;
+				}
+
+				// Pmin controller
+				next_state.ddelta_w_Pmin_ini = (Pmin - next_state.p_measure) * kipmax;
+				next_state.delta_w_Pmin_ini = curr_state.delta_w_Pmin_ini + (pred_state.ddelta_w_Pmin_ini + next_state.ddelta_w_Pmin_ini) * deltat / 2.0;
+
+				if (next_state.delta_w_Pmin_ini < 0) //
+				{
+					next_state.delta_w_Pmin_ini = 0;
+				}
+
+				if (next_state.delta_w_Pmin_ini > w_lim) // w_lim = 50
+				{
+					next_state.delta_w_Pmin_ini = w_lim;
+				}
+
+				delta_w_Pmin = next_state.delta_w_Pmin_ini + next_state.ddelta_w_Pmin_ini / kipmax * kppmax; // output from Pmin controller
+
+				if (delta_w_Pmin < 0) //
+				{
+					delta_w_Pmin = 0;
+				}
+
+				if (delta_w_Pmin > w_lim) // w_lim = 50
+				{
+					delta_w_Pmin = w_lim;
+				}
+
+				next_state.delta_w = delta_w_droop + delta_w_Pmax + delta_w_Pmin + 2.0 * PI * fset - w_ref; //the summation of the outputs from P-f droop, Pmax control and Pmin control
 
 				// delta_w_droop is the output of P-f droop
 				// Pset is the power set point
+				// delta_w_Pmax_ini and delta_w_Pmin_ini are the outputs of the integrator of Pmax controller and Pmin controller
+				// delta_w_Pmax and delta_w_Pmin are the outputs of Pmax controller and Pmin controller
+				// Pmax and Pmin are the maximum limit and minimum limit of Pmax controller and Pmin controller
+				// w_lim is the saturation limit
+				// w_ref is the rated frequency, usually 376.99 rad/s
+				// Function end
 
 				if (grid_forming_mode == DYNAMIC_DC_BUS) // consider the dynamics of PV dc bus, and the internal voltage magnitude needs to be recalculated
 				{
@@ -2091,18 +2321,17 @@ SIMULATIONMODE inverter_dyn::inter_deltaupdate(unsigned int64 delta_time, unsign
 						delta_w_Vdc_min = 0;
 					}
 
-					delta_w += delta_w_Vdc_min;
+					next_state.delta_w = next_state.delta_w + delta_w_Vdc_min; //the summation of the outputs from P-f droop, Pmax control and Pmin control, and Vdc_min control
 				}
 
-				freq = (delta_w + w_ref) / 2.0 / PI; // The frequency from the CERTS droop controller, Hz
+				freq = (next_state.delta_w + w_ref) / 2.0 / PI; // The frequency from the CERTS droop controller, Hz
 
 				// Function: Obtaining the Phase Angle, and obtaining the compelx value of internal voltages and their Norton Equivalence for power flow analysis
 				for (i = 0; i < 3; i++)
 				{
-				  Angle[i] = Angle_blk[i].getoutput(delta_w,deltat,CORRECTOR);
-
-				  e_source[i] = complex(E_mag * cos(Angle[i]), E_mag * sin(Angle[i])) * V_base;	  // transfers back to non-per-unit values
-				  value_IGenerated[i] = e_source[i] / (complex(Rfilter, Xfilter) * Z_base);							  // Thevenin voltage source to Norton current source convertion
+					next_state.Angle[i] = curr_state.Angle[i] + (pred_state.delta_w + next_state.delta_w) * deltat / 2.0; //Obtain the phase angle
+					e_source[i] = complex(E_mag * cos(next_state.Angle[i]), E_mag * sin(next_state.Angle[i])) * V_base;	  // transfers back to non-per-unit values
+					value_IGenerated[i] = e_source[i] / (complex(Rfilter, Xfilter) * Z_base);							  // Thevenin voltage source to Norton current source convertion
 
 					//Convergence check - do on internal voltage, because "reasons"
 					mag_diff_val = e_source[i].Mag() - e_source_prev[i].Mag();
@@ -2124,7 +2353,7 @@ SIMULATIONMODE inverter_dyn::inter_deltaupdate(unsigned int64 delta_time, unsign
 
 				double diff_w = next_state.delta_w - curr_state.delta_w;
 
-				memcpy(&curr_state, &next_state, sizeof(INV_DYN_STATE));
+				memcpy(&curr_state, &next_state, sizeof(INV_DYN_STATE2));
 
 				if ((fabs(diff_w) <= GridForming_freq_convergence_criterion) && (proceed_to_qsts == true))
 				{
@@ -2948,7 +3177,7 @@ SIMULATIONMODE inverter_dyn::inter_deltaupdate(unsigned int64 delta_time, unsign
 					// Function end
 				}
 
-				memcpy(&curr_state, &next_state, sizeof(INV_DYN_STATE));
+				memcpy(&curr_state, &next_state, sizeof(INV_DYN_STATE2));
 
 				simmode_return_value = SM_DELTA;
 			}
@@ -3275,7 +3504,7 @@ SIMULATIONMODE inverter_dyn::inter_deltaupdate(unsigned int64 delta_time, unsign
 						}
 					}
 
-					memcpy(&curr_state, &next_state, sizeof(INV_DYN_STATE));
+					memcpy(&curr_state, &next_state, sizeof(INV_DYN_STATE2));
 
 					simmode_return_value = SM_DELTA;
 
@@ -3304,7 +3533,7 @@ SIMULATIONMODE inverter_dyn::inter_deltaupdate(unsigned int64 delta_time, unsign
 //Initializes dynamic equations for first entry
 //Returns a SUCCESS/FAIL
 //curr_time is the initial states/information
-STATUS inverter_dyn::init_dynamics(INV_DYN_STATE *curr_time)
+STATUS inverter_dyn2::init_dynamics(INV_DYN_STATE2 *curr_time)
 {
 	OBJECT *obj = OBJECTHDR(this);
 
@@ -3347,23 +3576,11 @@ STATUS inverter_dyn::init_dynamics(INV_DYN_STATE *curr_time)
 				// Initialize the state variables of the internal voltages
 				e_source[i] = (value_IGenerated[i] * complex(Rfilter, Xfilter) * Z_base);
 				e_source_prev[i] = e_source[i];
-				
-				// inverter internal voltage angle initialization
-				Angle_blk[i].setparams(1.0);
-				Angle_blk[i].init(0,e_source[i].Arg());
+				curr_time->Angle[i] = (e_source[i]).Arg(); // Obtain the inverter internal voltage phasor angle
 			}
 
-
-			// QV control block initialization
-			// Add parameters to QV control block
-			// We add the parameters here instead of the create
-			// function because the parameters can be set through
-			// the glm file as well.
-
-			// Initialize the QV controller block
-			QV_blk.setparams(kpv,kiv,E_min,E_max,E_min,E_max);
-			QV_blk.init(0,(e_source[0].Mag() + e_source[1].Mag() + e_source[2].Mag()) / 3 / V_base);
-			
+			// Initializa the internal voltage magnitudes
+			curr_time->V_ini = (e_source[0].Mag() + e_source[1].Mag() + e_source[2].Mag()) / 3 / V_base;
 
 			//See if it is the first deltamode entry - theory is all future changes will trigger deltamode, so these should be set
 			if (first_deltamode_init == true)
@@ -3388,24 +3605,14 @@ STATUS inverter_dyn::init_dynamics(INV_DYN_STATE *curr_time)
 			}
 			//Default else - all changes should be in deltamode
 
-			// Initialize P measured filter block
-			Pmeas_blk.setparams(Tp);
-			Pmeas_blk.init(0,VA_Out.Re()/S_base);
-
-			// Initialize Q measured filter block
-			Qmeas_blk.setparams(Tq);
-			Qmeas_blk.init(0,VA_Out.Im()/S_base);
-
-			// Initialize Vmeasured filter block
-			Vmeas_blk.setparams(Tv);
-			Vmeas_blk.init(0,pCircuit_V_Avg_pu);
+			// Initialize measured P,Q,and V
+			curr_time->p_measure = VA_Out.Re() / S_base;
+			curr_time->q_measure = VA_Out.Im() / S_base;
+			curr_time->v_measure = pCircuit_V_Avg_pu;
 
 			// Initialize Pmax and Pmin controller
-			Pminfreq_blk.setparams(kppmax,kipmax,0.0,w_lim,0.0,w_lim);
-			Pmaxfreq_blk.setparams(kppmax,kipmax,-w_lim,0.0,-w_lim,0.0);
-			  
-			Pminfreq_blk.init(0.0,0.0);
-			Pmaxfreq_blk.init(0.0,0.0);
+			curr_time->delta_w_Pmax_ini = 0;
+			curr_time->delta_w_Pmin_ini = 0;
 
 			// Initialize Vdc_min controller and DC bus voltage
 			if (grid_forming_mode == DYNAMIC_DC_BUS) // consider the dynamics of PV dc bus, and the internal voltage magnitude needs to be recalculated
@@ -3433,7 +3640,7 @@ STATUS inverter_dyn::init_dynamics(INV_DYN_STATE *curr_time)
 							OBJECT *temp_obj = dc_interface_objects[temp_idx].dc_object;
 
 							//Error it up
-							GL_THROW("inverter_dyn:%d - %s - DC object update for object:%d - %s - failed!", obj->id, (obj->name ? obj->name : "Unnamed"), temp_obj->id, (temp_obj->name ? temp_obj->name : "Unnamed"));
+							GL_THROW("inverter_dyn2:%d - %s - DC object update for object:%d - %s - failed!", obj->id, (obj->name ? obj->name : "Unnamed"), temp_obj->id, (temp_obj->name ? temp_obj->name : "Unnamed"));
 							/*  TROUBLESHOOT
 							While performing the update to a DC-bus object on this inverter, an error occurred.  Please try again.
 							If the error persists, please check your model.  If the model appears correct, please submit a bug report via the issues tracker.
@@ -3663,7 +3870,7 @@ STATUS inverter_dyn::init_dynamics(INV_DYN_STATE *curr_time)
 
 // //Module-level post update call
 // /* Think this was just put here as an example - not sure what it would do */
-// STATUS inverter_dyn::post_deltaupdate(complex *useful_value, unsigned int mode_pass)
+// STATUS inverter_dyn2::post_deltaupdate(complex *useful_value, unsigned int mode_pass)
 // {
 // 	//If we have a meter, reset the accumulators
 // 	if (parent_is_a_meter == true)
@@ -3681,7 +3888,7 @@ STATUS inverter_dyn::init_dynamics(INV_DYN_STATE *curr_time)
 // }
 
 //Map Complex value
-gld_property *inverter_dyn::map_complex_value(OBJECT *obj, char *name)
+gld_property *inverter_dyn2::map_complex_value(OBJECT *obj, char *name)
 {
 	gld_property *pQuantity;
 	OBJECT *objhdr = OBJECTHDR(this);
@@ -3692,7 +3899,7 @@ gld_property *inverter_dyn::map_complex_value(OBJECT *obj, char *name)
 	//Make sure it worked
 	if ((pQuantity->is_valid() != true) || (pQuantity->is_complex() != true))
 	{
-		GL_THROW("inverter_dyn:%d %s - Unable to map property %s from object:%d %s", objhdr->id, (objhdr->name ? objhdr->name : "Unnamed"), name, obj->id, (obj->name ? obj->name : "Unnamed"));
+		GL_THROW("inverter_dyn2:%d %s - Unable to map property %s from object:%d %s", objhdr->id, (objhdr->name ? objhdr->name : "Unnamed"), name, obj->id, (obj->name ? obj->name : "Unnamed"));
 		/*  TROUBLESHOOT
 		While attempting to map a quantity from another object, an error occurred in inverter.  Please try again.
 		If the error persists, please submit your system and a bug report via the ticketing system.
@@ -3704,7 +3911,7 @@ gld_property *inverter_dyn::map_complex_value(OBJECT *obj, char *name)
 }
 
 //Map double value
-gld_property *inverter_dyn::map_double_value(OBJECT *obj, char *name)
+gld_property *inverter_dyn2::map_double_value(OBJECT *obj, char *name)
 {
 	gld_property *pQuantity;
 	OBJECT *objhdr = OBJECTHDR(this);
@@ -3715,7 +3922,7 @@ gld_property *inverter_dyn::map_double_value(OBJECT *obj, char *name)
 	//Make sure it worked
 	if ((pQuantity->is_valid() != true) || (pQuantity->is_double() != true))
 	{
-		GL_THROW("inverter_dyn:%d %s - Unable to map property %s from object:%d %s", objhdr->id, (objhdr->name ? objhdr->name : "Unnamed"), name, obj->id, (obj->name ? obj->name : "Unnamed"));
+		GL_THROW("inverter_dyn2:%d %s - Unable to map property %s from object:%d %s", objhdr->id, (objhdr->name ? objhdr->name : "Unnamed"), name, obj->id, (obj->name ? obj->name : "Unnamed"));
 		/*  TROUBLESHOOT
 		While attempting to map a quantity from another object, an error occurred in inverter.  Please try again.
 		If the error persists, please submit your system and a bug report via the ticketing system.
@@ -3727,7 +3934,7 @@ gld_property *inverter_dyn::map_double_value(OBJECT *obj, char *name)
 }
 
 //Function to pull all the complex properties from powerflow into local variables
-void inverter_dyn::pull_complex_powerflow_values(void)
+void inverter_dyn2::pull_complex_powerflow_values(void)
 {
 	//Pull in the various values from powerflow - straight reads
 	//Pull status
@@ -3757,7 +3964,7 @@ void inverter_dyn::pull_complex_powerflow_values(void)
 }
 
 //Function to reset the various accumulators, so they don't double-accumulate if they weren't used
-void inverter_dyn::reset_complex_powerflow_accumulators(void)
+void inverter_dyn2::reset_complex_powerflow_accumulators(void)
 {
 	int indexval;
 
@@ -3793,7 +4000,7 @@ void inverter_dyn::reset_complex_powerflow_accumulators(void)
 }
 
 //Function to push up all changes of complex properties to powerflow from local variables
-void inverter_dyn::push_complex_powerflow_values(bool update_voltage)
+void inverter_dyn2::push_complex_powerflow_values(bool update_voltage)
 {
 	complex temp_complex_val;
 	gld_wlock *test_rlock;
@@ -3908,7 +4115,7 @@ void inverter_dyn::push_complex_powerflow_values(bool update_voltage)
 }
 
 // Function to update current injection IGenerated for VSI
-STATUS inverter_dyn::updateCurrInjection(int64 iteration_count)
+STATUS inverter_dyn2::updateCurrInjection(int64 iteration_count)
 {
 	double temp_time;
 	OBJECT *obj = OBJECTHDR(this);
@@ -3999,7 +4206,7 @@ STATUS inverter_dyn::updateCurrInjection(int64 iteration_count)
 				//See if it was located
 				if (swing_test_fxn == NULL)
 				{
-					GL_THROW("inverter_dyn:%s - failed to map swing-checking for node:%s", (obj->name ? obj->name : "unnamed"), (obj->parent->name ? obj->parent->name : "unnamed"));
+					GL_THROW("inverter_dyn2:%s - failed to map swing-checking for node:%s", (obj->name ? obj->name : "unnamed"), (obj->parent->name ? obj->parent->name : "unnamed"));
 					/*  TROUBLESHOOT
 					While attempting to map the swing-checking function, an error was encountered.
 					Please try again.  If the error persists, please submit your code and a bug report via the trac website.
@@ -4013,7 +4220,7 @@ STATUS inverter_dyn::updateCurrInjection(int64 iteration_count)
 			//Make sure it worked
 			if (temp_status_val != SUCCESS)
 			{
-				GL_THROW("inverter_dyn:%s - failed to map swing-checking for node:%s", (obj->name ? obj->name : "unnamed"), (obj->parent->name ? obj->parent->name : "unnamed"));
+				GL_THROW("inverter_dyn2:%s - failed to map swing-checking for node:%s", (obj->name ? obj->name : "unnamed"), (obj->parent->name ? obj->parent->name : "unnamed"));
 				//Defined above
 			}
 
@@ -4191,10 +4398,10 @@ STATUS inverter_dyn::updateCurrInjection(int64 iteration_count)
 }
 
 //Internal function to the mapping of the DC object update function
-STATUS inverter_dyn::DC_object_register(OBJECT *DC_object)
+STATUS inverter_dyn2::DC_object_register(OBJECT *DC_object)
 {
 	FUNCTIONADDR temp_add = NULL;
-	DC_OBJ_FXNS temp_DC_struct;
+	DC_OBJ_FXNS2 temp_DC_struct;
 	OBJECT *obj = OBJECTHDR(this);
 
 	//Put the object into the structure
@@ -4206,7 +4413,7 @@ STATUS inverter_dyn::DC_object_register(OBJECT *DC_object)
 	//Make sure it worked
 	if (temp_DC_struct.fxn_address == NULL)
 	{
-		gl_error("inverter_dyn:%s - failed to map DC update for object %s", (obj->name ? obj->name : "unnamed"), (DC_object->name ? DC_object->name : "unnamed"));
+		gl_error("inverter_dyn2:%s - failed to map DC update for object %s", (obj->name ? obj->name : "unnamed"), (DC_object->name ? DC_object->name : "unnamed"));
 		/*  TROUBLESHOOT
 		While attempting to map the update function for a DC-bus device, an error was encountered.
 		Please try again.  If the error persists, please submit your code and a bug report via the issues tracker.
@@ -4226,39 +4433,39 @@ STATUS inverter_dyn::DC_object_register(OBJECT *DC_object)
 // IMPLEMENTATION OF CORE LINKAGE
 //////////////////////////////////////////////////////////////////////////
 
-EXPORT int create_inverter_dyn(OBJECT **obj, OBJECT *parent)
+EXPORT int create_inverter_dyn2(OBJECT **obj, OBJECT *parent)
 {
 	try
 	{
-		*obj = gl_create_object(inverter_dyn::oclass);
+		*obj = gl_create_object(inverter_dyn2::oclass);
 		if (*obj != NULL)
 		{
-			inverter_dyn *my = OBJECTDATA(*obj, inverter_dyn);
+			inverter_dyn2 *my = OBJECTDATA(*obj, inverter_dyn2);
 			gl_set_parent(*obj, parent);
 			return my->create();
 		}
 		else
 			return 0;
 	}
-	CREATE_CATCHALL(inverter_dyn);
+	CREATE_CATCHALL(inverter_dyn2);
 }
 
-EXPORT int init_inverter_dyn(OBJECT *obj, OBJECT *parent)
+EXPORT int init_inverter_dyn2(OBJECT *obj, OBJECT *parent)
 {
 	try
 	{
 		if (obj != NULL)
-			return OBJECTDATA(obj, inverter_dyn)->init(parent);
+			return OBJECTDATA(obj, inverter_dyn2)->init(parent);
 		else
 			return 0;
 	}
-	INIT_CATCHALL(inverter_dyn);
+	INIT_CATCHALL(inverter_dyn2);
 }
 
-EXPORT TIMESTAMP sync_inverter_dyn(OBJECT *obj, TIMESTAMP t1, PASSCONFIG pass)
+EXPORT TIMESTAMP sync_inverter_dyn2(OBJECT *obj, TIMESTAMP t1, PASSCONFIG pass)
 {
 	TIMESTAMP t2 = TS_NEVER;
-	inverter_dyn *my = OBJECTDATA(obj, inverter_dyn);
+	inverter_dyn2 *my = OBJECTDATA(obj, inverter_dyn2);
 	try
 	{
 		switch (pass)
@@ -4279,18 +4486,18 @@ EXPORT TIMESTAMP sync_inverter_dyn(OBJECT *obj, TIMESTAMP t1, PASSCONFIG pass)
 		if (pass == clockpass)
 			obj->clock = t1;
 	}
-	SYNC_CATCHALL(inverter_dyn);
+	SYNC_CATCHALL(inverter_dyn2);
 	return t2;
 }
 
-EXPORT int isa_inverter_dyn(OBJECT *obj, char *classname)
+EXPORT int isa_inverter_dyn2(OBJECT *obj, char *classname)
 {
-	return OBJECTDATA(obj,inverter_dyn)->isa(classname);
+	return OBJECTDATA(obj,inverter_dyn2)->isa(classname);
 }
 
-EXPORT STATUS preupdate_inverter_dyn(OBJECT *obj, TIMESTAMP t0, unsigned int64 delta_time)
+EXPORT STATUS preupdate_inverter_dyn2(OBJECT *obj, TIMESTAMP t0, unsigned int64 delta_time)
 {
-	inverter_dyn *my = OBJECTDATA(obj, inverter_dyn);
+	inverter_dyn2 *my = OBJECTDATA(obj, inverter_dyn2);
 	STATUS status_output = FAILED;
 
 	try
@@ -4300,14 +4507,14 @@ EXPORT STATUS preupdate_inverter_dyn(OBJECT *obj, TIMESTAMP t0, unsigned int64 d
 	}
 	catch (char *msg)
 	{
-		gl_error("preupdate_inverter_dyn(obj=%d;%s): %s", obj->id, (obj->name ? obj->name : "unnamed"), msg);
+		gl_error("preupdate_inverter_dyn2(obj=%d;%s): %s", obj->id, (obj->name ? obj->name : "unnamed"), msg);
 		return status_output;
 	}
 }
 
-EXPORT SIMULATIONMODE interupdate_inverter_dyn(OBJECT *obj, unsigned int64 delta_time, unsigned long dt, unsigned int iteration_count_val)
+EXPORT SIMULATIONMODE interupdate_inverter_dyn2(OBJECT *obj, unsigned int64 delta_time, unsigned long dt, unsigned int iteration_count_val)
 {
-	inverter_dyn *my = OBJECTDATA(obj, inverter_dyn);
+	inverter_dyn2 *my = OBJECTDATA(obj, inverter_dyn2);
 	SIMULATIONMODE status = SM_ERROR;
 	try
 	{
@@ -4316,14 +4523,14 @@ EXPORT SIMULATIONMODE interupdate_inverter_dyn(OBJECT *obj, unsigned int64 delta
 	}
 	catch (char *msg)
 	{
-		gl_error("interupdate_inverter_dyn(obj=%d;%s): %s", obj->id, obj->name ? obj->name : "unnamed", msg);
+		gl_error("interupdate_inverter_dyn2(obj=%d;%s): %s", obj->id, obj->name ? obj->name : "unnamed", msg);
 		return status;
 	}
 }
 
-// EXPORT STATUS postupdate_inverter_dyn(OBJECT *obj, complex *useful_value, unsigned int mode_pass)
+// EXPORT STATUS postupdate_inverter_dyn2(OBJECT *obj, complex *useful_value, unsigned int mode_pass)
 // {
-// 	inverter_dyn *my = OBJECTDATA(obj, inverter_dyn);
+// 	inverter_dyn2 *my = OBJECTDATA(obj, inverter_dyn2);
 // 	STATUS status = FAILED;
 // 	try
 // 	{
@@ -4332,18 +4539,18 @@ EXPORT SIMULATIONMODE interupdate_inverter_dyn(OBJECT *obj, unsigned int64 delta
 // 	}
 // 	catch (char *msg)
 // 	{
-// 		gl_error("postupdate_inverter_dyn(obj=%d;%s): %s", obj->id, obj->name ? obj->name : "unnamed", msg);
+// 		gl_error("postupdate_inverter_dyn2(obj=%d;%s): %s", obj->id, obj->name ? obj->name : "unnamed", msg);
 // 		return status;
 // 	}
 // }
 
 //// Define export function that update the VSI current injection IGenerated to the grid
-EXPORT STATUS inverter_dyn_NR_current_injection_update(OBJECT *obj, int64 iteration_count)
+EXPORT STATUS inverter_dyn2_NR_current_injection_update(OBJECT *obj, int64 iteration_count)
 {
 	STATUS temp_status;
 
 	//Map the node
-	inverter_dyn *my = OBJECTDATA(obj, inverter_dyn);
+	inverter_dyn2 *my = OBJECTDATA(obj, inverter_dyn2);
 
 	//Call the function, where we can update the IGenerated injection
 	temp_status = my->updateCurrInjection(iteration_count);
@@ -4353,12 +4560,12 @@ EXPORT STATUS inverter_dyn_NR_current_injection_update(OBJECT *obj, int64 iterat
 }
 
 // Export function for registering a DC interaction object
-EXPORT STATUS inverter_dyn_DC_object_register(OBJECT *this_obj, OBJECT *DC_obj)
+EXPORT STATUS inverter_dyn2_DC_object_register(OBJECT *this_obj, OBJECT *DC_obj)
 {
 	STATUS temp_status;
 
 	//Map us
-	inverter_dyn *this_inv = OBJECTDATA(this_obj, inverter_dyn);
+	inverter_dyn2 *this_inv = OBJECTDATA(this_obj, inverter_dyn2);
 
 	//Call the function to register us
 	temp_status = this_inv->DC_object_register(DC_obj);
