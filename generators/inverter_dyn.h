@@ -31,35 +31,6 @@ typedef struct
         double delta_w; // used only during switching to qsts convergence check
 
 	////////Grid-Following
-	// state variables in PLL
-	double ddelta_w_PLL_ini[3];
-	double delta_w_PLL_ini[3];
-	double delta_w_PLL[3];
-	double Angle_PLL[3];
-
-	//  state variables in current control loop
-	double digd_PI_ini[3];
-	double igd_PI_ini[3];
-	double digq_PI_ini[3];
-	double igq_PI_ini[3];
-
-	// state variables using current source representation
-	double digd_filter[3];
-	double igd_filter[3];
-	double digq_filter[3];
-	double igq_filter[3];
-
-	//  state variables in frequency-watt
-	double df_filter;			  //
-	double f_filter;			  //
-	double dPref_droop_pu_filter; //
-	double Pref_droop_pu_filter;  //
-
-	//  state variables in volt-var
-	double dV_filter;			  //
-	double V_filter;			  //
-	double dQref_droop_pu_filter; //
-	double Qref_droop_pu_filter;  //
 
 } INV_DYN_STATE;
 
@@ -217,11 +188,6 @@ public:
 	double ugd_pu_PS; // positive sequence voltage value in dq frame
 	double ugq_pu_PS; // positive sequence voltage value in dq frame
 
-	// used for grid-following control
-	double igd_PI[3];
-	double igq_PI[3];
-	double ed_pu[3]; // internal votlage in dq frame
-	double eq_pu[3]; // internal votlage in dq frame
 
 	double S_base;	 // S_base is the rated caspacity
 	double V_base;	 // Vbase is the rated Line to ground voltage
@@ -254,6 +220,34 @@ public:
 	PIControl  Pminfreq_blk; // Frequency controller for Pmin (replaces delta_w_Pmin_ini)
 	PIControl  Pmaxfreq_blk; // Frequency controller for Pmax (replaces delta_w_Pmax_ini)
 	Integrator Angle_blk[3]; // Integrator block for internal source angle for the three phases
+
+	// Grid Following blocks
+	PIControl delta_w_PLL_blk[3]; // PI block for PLL
+	Integrator Angle_PLL_blk[3]; // Integrator block for PLL angle
+	PIControl igd_PI_blk[3]; // PI control for d-axis current control loop
+	PIControl igq_PI_blk[3]; // PI control for q-axis current control loop
+	Filter    igd_filter_blk[3]; // Low pass filter for current id
+	Filter    igq_filter_blk[3]; // Low pass filter for current iq
+
+	// Volt-Var and Frequency-Watt feature blocks
+	Filter    V_filter_blk; // Volt-Var filter block
+	Filter    Qref_droop_pu_filter_blk; // Qref droop filter block
+	Filter    f_filter_blk; // Frequency-Watt filter block
+	Filter    Pref_droop_pu_filter_blk; // Pref droop filter block
+
+	// used for grid-following control
+	double igd_PI[3]; // Current control d-axis current
+	double igq_PI[3]; // Current control q-axis current
+	double ed_pu[3]; // internal votlage in dq frame
+	double eq_pu[3]; // internal votlage in dq frame
+
+	double Angle_PLL[3]; // PLL angle
+	double igd_filter[3]; // Output of igd filter block
+	double igq_filter[3]; // Output of igq filter block
+	double V_filter;      // Output of V_filter block
+	double Qref_droop_pu_filter; // Output of Qref droop pu filter block
+	double f_filter;      // Output of f_filter block
+	double Pref_droop_pu_filter; // Output of Pref droop pu filter block
 
 	double delta_w_droop; // delta mega from P-f droop
 	double delta_w_Pmax;  //
